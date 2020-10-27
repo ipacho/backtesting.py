@@ -663,14 +663,14 @@ class Trade:
 
 
 class _Broker:
-    def __init__(self, *, data, cash, commission, margin,
+    def __init__(self, *, data, cash, spread, margin,
                  trade_on_close, hedging, exclusive_orders, index):
         assert 0 < cash, "cash shosuld be >0, is {}".format(cash)
-        assert 0 <= commission < .1, "commission should be between 0-10%, is {}".format(commission)
+        assert 0 <= spread < 100, "spread should be between 0-100pips, is {}".format(spread)
         assert 0 < margin <= 1, "margin should be between 0 and 1, is {}".format(margin)
         self._data = data  # type: _Data
         self._cash = cash
-        self._commission = commission
+        self._spread = spread
         self._leverage = 1 / margin
         self._trade_on_close = trade_on_close
         self._hedging = hedging
@@ -842,12 +842,12 @@ class _Broker:
 
             # Else this is a stand-alone trade
 
-            # Adjust price to include commission (or bid-ask spread).
+            # Adjust price to include spread.
             # In long positions, the adjusted price is a fraction higher, and vice versa.
-            adjusted_price = price * (1 + copysign(self._commission, order.size))
+            adjusted_price = price + copysign(0.0001 * self._spread, order.size)
 
             # If order size was specified proportionally,
-            # precompute true size in units, accounting for margin and spread/commissions
+            # precompute true size in units, accounting for margin and spread
             size = order.size
             if -1 < size < 1:
                 size = copysign(int((self.margin_available * self._leverage * abs(size))
@@ -972,7 +972,7 @@ class Backtest:
                  strategy: Type[Strategy],
                  *,
                  cash: float = 10000,
-                 commission: float = .0,
+                 spread: float = 2.,
                  margin: float = 1.,
                  trade_on_close=False,
                  hedging=False,
@@ -998,11 +998,7 @@ class Backtest:
 
         `cash` is the initial cash to start with.
 
-        `commission` is the commission ratio. E.g. if your broker's commission
-        is 1% of trade value, set commission to `0.01`. Note, if you wish to
-        account for bid-ask spread, you can approximate doing so by increasing
-        the commission, e.g. set it to `0.0002` for commission-less forex
-        trading where the average spread is roughly 0.2‰ of asking price.
+        `spread` is the spread pips.
 
         `margin` is the required margin (ratio) of a leveraged account.
         No difference is made between initial and maintenance margins.
@@ -1028,8 +1024,8 @@ class Backtest:
             raise TypeError('`strategy` must be a Strategy sub-type')
         if not isinstance(data, pd.DataFrame):
             raise TypeError("`data` must be a pandas.DataFrame with columns")
-        if not isinstance(commission, Number):
-            raise TypeError('`commission` must be a float value, percent of '
+        if not isinstance(spread, Number):
+            raise TypeError('`spread` must be a float value, pips of '
                             'entry order price')
 
         data = data.copy(deep=False)
@@ -1073,7 +1069,7 @@ class Backtest:
 
         self._data = data   # type: pd.DataFrame
         self._broker = partial(
-            _Broker, cash=cash, commission=commission, margin=margin,
+            _Broker, cash=cash, spread=spread, margin=margin,
             trade_on_close=trade_on_close, hedging=hedging,
             exclusive_orders=exclusive_orders, index=data.index,
         )
